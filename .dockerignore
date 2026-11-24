@@ -4,7 +4,5 @@
 .idea
 .kotlin
 build
-admin-ui/dist
-admin-ui/node_modules
 **/.env
 **/.env.*

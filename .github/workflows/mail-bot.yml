@@ -3,33 +3,17 @@ name: Gmail Discord bot
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '7,37 * * * *'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   build:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_DB: mail_bot_test
-          POSTGRES_USER: mail_bot_test
-          POSTGRES_PASSWORD: mail_bot_test
-        ports:
-          - 5432/tcp
-        options: >-
-          --health-cmd "pg_isready -U mail_bot_test -d mail_bot_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -40,82 +24,4 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Test and package
-        env:
-          TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:${{ job.services.postgres.ports['5432'] }}/mail_bot_test
-          TEST_DATABASE_USERNAME: mail_bot_test
-          TEST_DATABASE_PASSWORD: mail_bot_test
-        run: |
-          ./gradlew --no-daemon test bootJar
-          jar="$(find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -print)"
-          test -f "$jar"
-          cp "$jar" mail-bot.jar
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: mail-bot-${{ github.sha }}
-          path: mail-bot.jar
-          if-no-files-found: error
-
-  poll:
-    if: github.event_name != 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    concurrency:
-      group: gmail-discord-poll
-      cancel-in-progress: false
-    steps:
-      - name: Find package for this commit
-        id: package
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          package="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" \
-            -f name="mail-bot-$GITHUB_SHA" -f per_page=100 \
-            --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")][0] | if . == null then "" else "\(.id),\(.workflow_run.id)" end')"
-          if [[ -n "$package" ]]; then
-            echo "id=${package%,*}" >> "$GITHUB_OUTPUT"
-            echo "run-id=${package#*,}" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        if: steps.package.outputs.id != ''
-        id: download
-        continue-on-error: true
-        with:
-          artifact-ids: ${{ steps.package.outputs.id }}
-          run-id: ${{ steps.package.outputs.run-id }}
-          github-token: ${{ github.token }}
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        if: steps.download.outcome != 'success'
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: ${{ steps.download.outcome != 'success' && 'gradle' || '' }}
-      - name: Rebuild missing or expired package
-        if: steps.download.outcome != 'success'
-        run: |
-          ./gradlew --no-daemon test bootJar
-          jar="$(find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -print)"
-          test -f "$jar"
-          cp "$jar" mail-bot.jar
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: steps.download.outcome != 'success'
-        continue-on-error: true
-        with:
-          name: mail-bot-${{ github.sha }}
-          path: mail-bot.jar
-          if-no-files-found: error
-      - name: Poll Gmail and send notifications
-        env:
-          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
-          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
-          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
-          BOT_CONFIG_KEY: ${{ secrets.BOT_CONFIG_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
-          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-        run: time java -jar mail-bot.jar
+        run: ./gradlew --no-daemon test bootJar

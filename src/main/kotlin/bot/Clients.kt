@@ -37,6 +37,22 @@ class GmailClient(
         }
     }
 
+    fun watch(topic: String): String {
+        val body = mapper.writeValueAsString(
+            mapOf("topicName" to topic, "labelIds" to listOf("INBOX"), "labelFilterBehavior" to "include"),
+        )
+        val response = http.send(
+            request("https://gmail.googleapis.com/gmail/v1/users/me/watch")
+                .header("Authorization", "Bearer ${token()}")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        check(response.statusCode() in 200..299) { "Gmail watch failed (HTTP ${response.statusCode()})" }
+        return mapper.readTree(response.body()).requiredText("historyId")
+    }
+
     fun changes(cursor: String): Changes? {
         val added = linkedSetOf<String>()
         val inInbox = mutableSetOf<String>()
