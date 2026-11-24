@@ -1,0 +1,7 @@
+.gradle/
+.kotlin/
+build/
+.idea/
+.env
+admin-ui/node_modules/
+admin-ui/dist/
